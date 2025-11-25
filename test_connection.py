@@ -1,6 +1,5 @@
 import asyncio
-from database import engine, init_db, Base
-from models import Task
+from database import engine, init_db
 from sqlalchemy import text
 
 
@@ -34,5 +33,6 @@ async def test_connection():
         # Закрываем соединение
         await engine.dispose()
 
+        
 if __name__ == "__main__":
- asyncio.run(test_connection())
+    asyncio.run(test_connection())

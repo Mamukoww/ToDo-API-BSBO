@@ -10,7 +10,7 @@ class Task(Base):
         index=True, # Создать индекс для быстрого поиска
         autoincrement=True # Автоматическая генерация
     )
-    
+
     title = Column(
         Text, # Text = текст неограниченной длины
         nullable=False # Не может быть NULL
@@ -43,6 +43,7 @@ class Task(Base):
         nullable=False,
         default=False
     )
+ 
     created_at = Column(
         DateTime(timezone=True), # С поддержкой часовых поясов
         server_default=func.now(), # Автоматически текущее время
@@ -53,19 +54,19 @@ class Task(Base):
         DateTime(timezone=True),
         nullable=True # NULL пока задача не завершена
     )
-    
-    def repr(self) -> str:
+
+    def __repr__(self) -> str:
         return f"<Task(id={self.id}, title='{self.title}', quadrant='{self.quadrant}')>"
 
     def to_dict(self) -> dict:
         return {
             "id": self.id,
-            "title": self.title,
-            "description": self.description,
-            "is_important": self.is_important,
-            "is_urgent": self.is_urgent,
-            "quadrant": self.quadrant,
-            "completed": self.completed,
-            "created_at": self.created_at,
-            "completed_at": self.completed_at
-        }
+        "title": self.title,
+        "description": self.description,
+        "is_important": self.is_important,
+        "is_urgent": self.is_urgent,
+        "quadrant": self.quadrant,
+        "completed": self.completed,
+        "created_at": self.created_at,
+        "completed_at": self.completed_at
+    }
