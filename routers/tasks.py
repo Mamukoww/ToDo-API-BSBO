@@ -1,10 +1,10 @@
 from fastapi import APIRouter, HTTPException, Query, status, Depends
-from typing import List
-from datetime import datetime
+from typing import List, Optional
+from datetime import datetime, timezone, timedelta
 from schemas import TaskCreate, TaskUpdate, TaskResponse
 from database import init_db, get_async_session
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from models import Task
 
 router = APIRouter(
@@ -78,37 +78,30 @@ async def get_task_by_id(
 
 # Мы указываем, что эндпоинт будет возвращать данные,
 # соответствующие схеме TaskResponse
-@router.post("/", response_model=TaskResponse,
-status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=TaskResponse, status_code=201)
 async def create_task(
     task: TaskCreate,
     db: AsyncSession = Depends(get_async_session)
 ) -> TaskResponse:
-    # Определяем квадрант
-    if task.is_important and task.is_urgent:
-        quadrant = "Q1"
-    elif task.is_important and not task.is_urgent:
-        quadrant = "Q2"
-    elif not task.is_important and task.is_urgent:
-        quadrant = "Q3"
-    else:
-        quadrant = "Q4"
-
-    new_task = Task(
+    # Создаем экземпляр Task из данных запроса
+    db_task = Task(
         title=task.title,
         description=task.description,
         is_important=task.is_important,
-        is_urgent=task.is_urgent,
-        quadrant=quadrant,
-        completed=False # Новая задача всегда не выполнена
-        # created_at заполнится автоматически (server_default=func.now())
+        deadline_at=task.deadline_at,
+        completed=False,
+        created_at=datetime.now(timezone.utc)
     )
-
-    db.add(new_task) # Добавляем в сессию (еще не в БД!)
-    await db.commit() # Выполняем INSERT в БД
-    await db.refresh(new_task) # Обновляем объект (получаем ID из БД)
-    # FastAPI автоматически преобразует Task → TaskResponse
-    return new_task
+    
+    # Устанавливаем квадрант на основе важности и срочности
+    db_task.quadrant = db_task.calculate_quadrant()
+    
+    # Добавляем задачу в сессию
+    db.add(db_task)
+    await db.commit()  # Сохраняем изменения в БД
+    await db.refresh(db_task)  # Обновляем объект данными из БД
+    
+    return db_task
 
 @router.put("/{task_id}", response_model=TaskResponse)
 async def update_task(
@@ -116,31 +109,33 @@ async def update_task(
     task_update: TaskUpdate,
     db: AsyncSession = Depends(get_async_session)
 ) -> TaskResponse:
-    # ШАГ 1: по аналогии с GET ищем задачу по ID
-    result = await db.execute(
-        select(Task).where(Task.id == task_id)
-    )
-    # Получаем одну задачу или None
-    task = result.scalar_one_or_none()
-    if not task:
+    # Получаем задачу по ID
+    result = await db.execute(select(Task).where(Task.id == task_id))
+    db_task = result.scalar_one_or_none()
+    
+    if db_task is None:
         raise HTTPException(status_code=404, detail="Задача не найдена")
-    # ШАГ 2: Получаем и обновляем только переданные поля (exclude_unset=True)
-    # Без exclude_unset=True все None поля тоже попадут в БД
-    update_data = task_update.model_dump(exclude_unset=True)
-    # ШАГ 3: Обновить атрибуты объекта
-    for field, value in update_data.items():
-        setattr(task, field, value) # task.field = value
-    # ШАГ 4: Пересчитываем квадрант, если изменились важность или срочность
-    if "is_important" in update_data or "is_urgent" in update_data:
-        if task.is_important and task.is_urgent:
-            task.quadrant = "Q1"
-        elif task.is_important and not task.is_urgent:
-            task.quadrant = "Q2"
-        elif not task.is_important and task.is_urgent:
-            task.quadrant = "Q3"
+    
+    # Флаг для отслеживания изменения полей, влияющих на квадрант
+    quadrant_needs_update = False
+    
+    # Обновляем поля, если они были переданы
+    if task_update.title is not None:
+        db_task.title = task_update.title
+    if task_update.description is not None:
+        db_task.description = task_update.description
+    if task_update.is_important is not None:
+        db_task.is_important = task_update.is_important
+        quadrant_needs_update = True
+    if task_update.deadline_at is not None:
+        db_task.deadline_at = task_update.deadline_at
+        quadrant_needs_update = True
+    if task_update.completed is not None:
+        db_task.completed = task_update.completed
+        if task_update.completed:
+            db_task.completed_at = datetime.now(timezone.utc)
         else:
-            task.quadrant = "Q4"
-    await db.commit() # UPDATE tasks SET ... WHERE id = task_id
+            db_task.completed_at = None
     await db.refresh(task) # Обновить объект из БД
 
     return task

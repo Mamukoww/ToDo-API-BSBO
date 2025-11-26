@@ -1,7 +1,7 @@
 # Pydantic модели
-from pydantic import BaseModel, Field
-from typing import Optional
-from datetime import datetime
+from pydantic import BaseModel, Field, computed_field
+from typing import Optional, Union
+from datetime import datetime, timezone
 
 # Базовая схема для Task.
 # Все поля, которые есть в нашей "базе данных" tasks_db
@@ -18,9 +18,9 @@ class TaskBase(BaseModel):
     is_important: bool = Field(
         ...,
         description="Важность задачи")
-    is_urgent: bool = Field(
-        ...,
-        description="Срочность задачи")
+    deadline_at: Optional[datetime] = Field(
+        None,
+        description="Плановый срок выполнения задачи")
     
 # Схема для создания новой задачи
 # Наследует все поля от TaskBase
@@ -42,9 +42,9 @@ class TaskUpdate(BaseModel):
     is_important: Optional[bool] = Field(
         None,
         description="Новая важность")
-    is_urgent: Optional[bool] = Field(
+    deadline_at: Optional[datetime] = Field(
         None,
-        description="Новая срочность")
+        description="Новый срок выполнения задачи")
     completed: Optional[bool] = Field(
         None,
         description="Статус выполнения")
@@ -67,6 +67,16 @@ class TaskResponse(TaskBase):
     created_at: datetime = Field(
         ...,
         description="Дата и время создания задачи")
+    
+    @computed_field
+    @property
+    def days_remaining(self) -> Optional[int]:
+        """Количество дней до дедлайна (None если дедлайн не установлен)"""
+        if not self.deadline_at:
+            return None
+        now = datetime.now(timezone.utc)
+        delta = self.deadline_at - now
+        return max(0, delta.days)
 
 class Config: # Config класс для работы с ORM (понадобится посде подключения СУБД)
     from_attributes = True

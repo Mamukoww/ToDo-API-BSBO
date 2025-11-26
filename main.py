@@ -1,21 +1,46 @@
-from fastapi import FastAPI
-from routers import tasks
+from fastapi import FastAPI, Depends
+from contextlib import asynccontextmanager
+from database import init_db, get_async_session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, text
+from routers import tasks, stats
 
 app = FastAPI(
     title="ToDo лист API",
     description="API для управления задачами с использованием матрицы Эйзенхауэра",
-    version="1.0.0",
+    version="2.0.0",
     contact={
         "name": "Мамуков Лаврентий Михайлович",
     }
 )
 
-app.include_router(tasks.router, prefix="/api/v1")
+app.include_router(tasks.router, prefix="/api/v2")
+app.include_router(stats.router, prefix="/api/v2")
 
 @app.get("/")
-async def welcome() -> dict:
-    return {"message": "Привет, студент!",
-            "api_title": app.title,
-            "api_description": app.description,
-            "api_version": app.version,
-            "api_author": app.contact["name"]}
+async def read_root() -> dict:
+    return {
+        "message": "Task Manager API - Управление задачами по матрице Эйзенхауэра",
+        "version": "2.0.0",
+        "database": "PostgreSQL (Supabase)",
+        "docs": "/docs",
+        "redoc": "/redoc",
+    }
+
+@app.get("/health")
+async def health_check(
+    db: AsyncSession = Depends(get_async_session)
+) -> dict:
+    """
+    Проверка здоровья API и динамическая проверка подключения к БД.
+    """
+    try:
+        # Пытаемся выполнить простейший запрос к БД
+        await db.execute(text("SELECT 1"))
+        db_status = "connected"
+    except Exception:
+        db_status = "disconnected"
+    return {
+        "status": "healthy",
+        "database": db_status
+    }
