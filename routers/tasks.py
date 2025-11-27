@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query, status, Depends
 from typing import List, Optional
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, date, timedelta
 from schemas import TaskCreate, TaskUpdate, TaskResponse
 from database import init_db, get_async_session
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -61,6 +61,23 @@ async def search_tasks(
     return tasks
 
     
+@router.get("/today", response_model=List[TaskResponse])
+async def get_tasks_due_today(
+    db: AsyncSession = Depends(get_async_session)
+) -> List[TaskResponse]:
+    today = date.today()
+    start_of_day = datetime.combine(today, datetime.min.time()).astimezone()
+    end_of_day = datetime.combine(today, datetime.max.time()).astimezone()
+    
+    result = await db.execute(
+        select(Task).where(
+            Task.deadline_at >= start_of_day,
+            Task.deadline_at <= end_of_day
+        )
+    )
+    tasks = result.scalars().all()
+    return tasks
+
 @router.get("/{task_id}", response_model=TaskResponse)
 async def get_task_by_id(
     task_id: int,
@@ -136,9 +153,7 @@ async def update_task(
             db_task.completed_at = datetime.now(timezone.utc)
         else:
             db_task.completed_at = None
-    await db.refresh(task) # Обновить объект из БД
 
-    return task
     
 @router.patch("/{task_id}/complete", response_model=TaskResponse)
 async def complete_task(
